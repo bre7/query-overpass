@@ -1,86 +1,62 @@
-var osmtogeojson = require('osmtogeojson'),
-    querystring = require('querystring'),
-    request = require('request'),
-    concat = require('concat-stream'),
-    JSONStream = require('JSONStream'),
-    xmldom = require('xmldom')
+const osmtogeojson = require('osmtogeojson'),
+  querystring = require('querystring'),
+  request = require('request-promise-native'),
+  xmldom = require('xmldom')
 
-module.exports = function(query, cb, options) {
-    var contentType;
-    options = options || {};
+/**
+ *
+ * @param {string} query
+ * @param {{flatProperties?: boolean, overpassUrl?: string}} options
+ * @return
+ */
+export async function OverpassQuery(query, options) {
+  options = {
+    overpassUrl: 'https://overpass-api.de/api/interpreter',
+    flatProperties: false,
+    ...options
+  }
 
-    var toGeoJSON = function(data) {
-        var geojson;
+  const reqOptions = {
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded'
+    },
+    body: querystring.stringify({ data: query })
+  }
 
-        geojson = osmtogeojson(data, {
-            flatProperties: options.flatProperties || false
-        });
-        cb(undefined, geojson);
-    };
+  const response = await request({
+    method: "POST",
+    uri: options.overpassUrl,
+    body: {
+      some: "payload",
+    },
+    resolveWithFullResponse: true,
+    ...reqOptions,
+  })
 
-    var handleXml = function (data) {
-        var parser = new xmldom.DOMParser();
-        var doc = parser.parseFromString(data);
-        toGeoJSON(doc);
+  if (response.statusCode !== 200) {
+    return {
+      message: 'Request failed: HTTP ' + response.statusCode,
+      statusCode: response.statusCode
     }
+  }
+  const contentType = response.headers['content-type']
 
-    var reqOptions = {
-        headers: {
-            'content-type': 'application/x-www-form-urlencoded'
-        },
-        body: querystring.stringify({ data: query })
-    };
+  if (contentType.indexOf('json') >= 0) {
+    const json = await response.body.toJSON()
 
-    var r;
+    return osmtogeojson(json, {
+      flatProperties: options.flatProperties
+    })
+  } else if (contentType.indexOf('xml') >= 0) {
+    var parser = new xmldom.DOMParser()
+    var doc = parser.parseFromString(response.body)
 
-    if (!global.window) {
-        r = request.post(options.overpassUrl || 'http://overpass-api.de/api/interpreter', reqOptions);
-
-        r
-            .on('response', function(response) {
-                if (response.statusCode != 200) {
-                    r.abort();
-                    return cb({
-                        message: 'Request failed: HTTP ' + response.statusCode,
-                        statusCode: response.statusCode
-                    });
-                }
-                contentType = response.headers['content-type'];
-
-                if (contentType.indexOf('json') >= 0) {
-                    r.pipe(JSONStream.parse())
-                        .on('data', toGeoJSON)
-                        .on('error', cb);
-                } else if (contentType.indexOf('xml') >= 0) {
-                    var body = '';
-                    r.on('data', function (chunk) { body += chunk; })
-                        .on('end', function() { handleXml(body); });
-                } else {
-                    cb({
-                        message: 'Unknown Content-Type "' + contentType + '" in response'
-                    });
-                }
-            })
-            .on('error', cb);
-    } else {
-        r = request.post(options.overpassUrl || 'http://overpass-api.de/api/interpreter', reqOptions, 
-            function (error, response, body) {
-                if (!error && response.statusCode === 200) {
-                    toGeoJSON(JSON.parse(body));
-                } else if (error) {
-                    cb(error);
-                } else if (response) {
-                    cb({
-                        message: 'Request failed: HTTP ' + response.statusCode,
-                        statusCode: response.statusCode
-                    });
-                } else {
-                    cb({
-                        message: 'Unknown error.',
-                    });
-                }
-            });
+    return osmtogeojson(doc, {
+      flatProperties: options.flatProperties
+    })
+  } else {
+    return {
+      message: 'Unknown Content-Type "' + contentType + '" in response'
     }
-
-    return r;
-};
+  }
+}
