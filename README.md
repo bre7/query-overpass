@@ -60,23 +60,28 @@ The default behaviour, without adding `--flat-properties` is to use `false` to b
 Installation is easy with npm:
 
 ```bash
-$ npm install query-overpass
+$ yarn install query-overpass
 ```
 
 ## api
 
 query-overpass exports a single function:
 
-### query_overpass(query, callback, options)
+### OverpassQuery(query)
 
-Performs the provided query and calls the callback when done. The callback is of the form
+Performs the provided query and returns the proper response:
 
 ```javascript
-callback(error, data)
+import { OverpassQuery } from "/query-overpass"
+
+const query = "..."
+
+const response = OverpassQuery(query)
 ```
 
-Where error is an object containing `message` and `statusCode` if an error occured, or `undefined` if
-no error occured. `data` will be the query response as an GeoJSON object.
+Response can be:
+* `{message: string, statusCode: number}` if an error occured, OR
+* `{data: object}` where data will be the query response as an GeoJSON object, if no error occured.
 
 The options supported at the moment are
 
